@@ -1,0 +1,88 @@
+---
+title: "Fake News Detection with R"
+output: 
+  github_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## About the project 
+### What is NLP
+
+
+## Data Loading
+
+```{r}
+library(tidymodels)
+library(tidytext)
+library(ranger)
+library(textrecipes)
+library(here)
+library(tidyverse)
+
+news <- read_csv(paste0(here(), "/Data/train.csv"))
+glimpse(news)
+```
+
+```{r}
+news <- news %>% 
+  mutate(content = paste(title, text, sep = " "),
+         label = if_else(label == 1, "true", "fake"),
+         label = factor(label, levels = c("true","fake"))) %>% # Setting 'true' as first factor 
+  relocate(label, .before = 1) %>% 
+  select(-title,-text) 
+news
+```
+
+## Distribution fake/true news
+
+```{r}
+news %>% count(label)
+```
+
+* Dataset seems quite balanced  
+
+## Which autor are more associated with fake/true news?
+
+```{r}
+news %>% 
+  filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
+  count(label, author)
+  # filter(n > 10, label == "fake")
+  # ggplot(aes(author, n, fill = label)) + 
+  # geom_col() +
+  # coord_flip()
+```
+
+## Which words are more associated with fake/true news?
+
+```{r}
+## Try different approaches: term-frequency, tf-idf, weighted log-odds (tidylo package)
+news %>% 
+  unnest_tokens(text, content)
+```
+
+## Are fake news lengthy than the true ones?
+
+## Model creation
+### Data Splitting
+
+### Preprocessing the text
+
+### Defining the models
+
+
+
+
+
+
+
+
+
+
+
+
+
