@@ -24,127 +24,13 @@ Fake News Detection with R
 
 ``` r
 library(tidymodels)
-```
-
-    ## Warning: package 'tidymodels' was built under R version 4.1.3
-
-    ## -- Attaching packages -------------------------------------- tidymodels 1.0.0 --
-
-    ## v broom        1.0.1      v recipes      1.0.3 
-    ## v dials        1.1.0      v rsample      1.1.1 
-    ## v dplyr        1.0.10     v tibble       3.1.8 
-    ## v ggplot2      3.4.0      v tidyr        1.2.1 
-    ## v infer        1.0.4      v tune         1.0.1 
-    ## v modeldata    1.0.1      v workflows    1.1.2 
-    ## v parsnip      1.0.3      v workflowsets 1.0.0 
-    ## v purrr        0.3.5      v yardstick    1.1.0
-
-    ## Warning: package 'broom' was built under R version 4.1.3
-
-    ## Warning: package 'dials' was built under R version 4.1.3
-
-    ## Warning: package 'scales' was built under R version 4.1.3
-
-    ## Warning: package 'dplyr' was built under R version 4.1.3
-
-    ## Warning: package 'ggplot2' was built under R version 4.1.3
-
-    ## Warning: package 'infer' was built under R version 4.1.3
-
-    ## Warning: package 'modeldata' was built under R version 4.1.3
-
-    ## Warning: package 'parsnip' was built under R version 4.1.3
-
-    ## Warning: package 'purrr' was built under R version 4.1.3
-
-    ## Warning: package 'recipes' was built under R version 4.1.3
-
-    ## Warning: package 'rsample' was built under R version 4.1.3
-
-    ## Warning: package 'tibble' was built under R version 4.1.3
-
-    ## Warning: package 'tidyr' was built under R version 4.1.3
-
-    ## Warning: package 'tune' was built under R version 4.1.3
-
-    ## Warning: package 'workflows' was built under R version 4.1.3
-
-    ## Warning: package 'workflowsets' was built under R version 4.1.3
-
-    ## Warning: package 'yardstick' was built under R version 4.1.3
-
-    ## -- Conflicts ----------------------------------------- tidymodels_conflicts() --
-    ## x purrr::discard() masks scales::discard()
-    ## x dplyr::filter()  masks stats::filter()
-    ## x dplyr::lag()     masks stats::lag()
-    ## x recipes::step()  masks stats::step()
-    ## * Search for functions across packages at https://www.tidymodels.org/find/
-
-``` r
 library(tidytext)
-```
-
-    ## Warning: package 'tidytext' was built under R version 4.1.3
-
-``` r
 library(ranger)
-```
-
-    ## Warning: package 'ranger' was built under R version 4.1.3
-
-``` r
 library(textrecipes)
-```
-
-    ## Warning: package 'textrecipes' was built under R version 4.1.3
-
-``` r
 library(here)
-```
-
-    ## Warning: package 'here' was built under R version 4.1.1
-
-    ## here() starts at C:/Users/pessoal/Desktop/Projetos/nlp_pipeline_optimization
-
-``` r
 library(tidyverse)
-```
 
-    ## Warning: package 'tidyverse' was built under R version 4.1.3
-
-    ## -- Attaching packages --------------------------------------- tidyverse 1.3.2 --
-
-    ## v readr   2.1.3     v forcats 0.5.2
-    ## v stringr 1.5.0
-
-    ## Warning: package 'readr' was built under R version 4.1.3
-
-    ## Warning: package 'stringr' was built under R version 4.1.3
-
-    ## Warning: package 'forcats' was built under R version 4.1.3
-
-    ## -- Conflicts ------------------------------------------ tidyverse_conflicts() --
-    ## x readr::col_factor() masks scales::col_factor()
-    ## x purrr::discard()    masks scales::discard()
-    ## x dplyr::filter()     masks stats::filter()
-    ## x stringr::fixed()    masks recipes::fixed()
-    ## x dplyr::lag()        masks stats::lag()
-    ## x readr::spec()       masks yardstick::spec()
-
-``` r
 news <- read_csv(paste0(here(), "/Data/train.csv"))
-```
-
-    ## Rows: 20800 Columns: 5
-    ## -- Column specification --------------------------------------------------------
-    ## Delimiter: ","
-    ## chr (3): title, author, text
-    ## dbl (2): id, label
-    ## 
-    ## i Use `spec()` to retrieve the full column specification for this data.
-    ## i Specify the column types or set `show_col_types = FALSE` to quiet this message.
-
-``` r
 glimpse(news)
 ```
 
@@ -160,7 +46,7 @@ glimpse(news)
 news <- news %>% 
   mutate(content = paste(title, text, sep = " "),
          label = if_else(label == 1, "true", "fake"),
-         label = factor(label, levels = c("true","fake"))) %>% # Setting 'true' as first factor 
+         label = factor(label, levels = c("true","fake"))) %>% # Setting 'true' as event level
   relocate(label, .before = 1) %>% 
   select(-title,-text) 
 news
@@ -199,61 +85,87 @@ news %>% count(label)
 
 ``` r
 news %>% 
-  filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
-  count(label, author)
+  #filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
+  count(label, author, sort = TRUE, name = "count") %>% 
+  group_by(label) %>% 
+  slice_max(count, n = 10) %>% 
+  mutate(author = fct_reorder(author, count),
+         author = fct_recode(author, "Alexander Light" = "noreply@blogger.com (Alexander Light)")) %>% 
+  filter(author != "nan") %>% 
+  ggplot(aes(author, count, fill = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(label), scales = "free") +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  coord_flip()
 ```
 
-    ## # A tibble: 560 x 3
-    ##    label author            n
-    ##    <fct> <chr>         <int>
-    ##  1 true  AARGH63           1
-    ##  2 true  abinico           1
-    ##  3 true  Abramo            1
-    ##  4 true  ActivistPost      8
-    ##  5 true  admin           193
-    ##  6 true  Admin            41
-    ##  7 true  administrator     1
-    ##  8 true  adobochron        1
-    ##  9 true  Adoriasoft        1
-    ## 10 true  AFP               1
-    ## # ... with 550 more rows
-
-``` r
-  # filter(n > 10, label == "fake")
-  # ggplot(aes(author, n, fill = label)) + 
-  # geom_col() +
-  # coord_flip()
-```
+![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ## Which words are more associated with fake/true news?
 
 ``` r
 ## Try different approaches: term-frequency, tf-idf, weighted log-odds (tidylo package)
-news %>% 
-  unnest_tokens(text, content)
+news_words <- news %>% 
+  unnest_tokens(text, content) %>% 
+  count(label, text, sort = TRUE)
+
+news_words %>% 
+  anti_join(stop_words, 
+            by = c("text" = "word")) %>%
+  filter(!str_detect(text, "^<U|^http")) %>% # take out other language words and useless information
+  bind_tf_idf(text, label, n) %>% 
+  group_by(label) %>% 
+  slice_max(tf_idf, n = 12) %>% 
+  mutate(text = fct_reorder(text, n)) %>%
+  ungroup() %>% 
+  ggplot(aes(text, tf_idf, fill = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(label), scales = "free") +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  coord_flip()
 ```
 
-    ## # A tibble: 15,963,949 x 4
-    ##    label    id author        text   
-    ##    <fct> <dbl> <chr>         <chr>  
-    ##  1 true      0 Darrell Lucus house  
-    ##  2 true      0 Darrell Lucus dem    
-    ##  3 true      0 Darrell Lucus aide   
-    ##  4 true      0 Darrell Lucus we     
-    ##  5 true      0 Darrell Lucus didn’t 
-    ##  6 true      0 Darrell Lucus even   
-    ##  7 true      0 Darrell Lucus see    
-    ##  8 true      0 Darrell Lucus comey’s
-    ##  9 true      0 Darrell Lucus letter 
-    ## 10 true      0 Darrell Lucus until  
-    ## # ... with 15,963,939 more rows
+![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 
 ## Are fake news lengthy than the true ones?
+
+``` r
+news %>% 
+  mutate(length = str_count(content, pattern = boundary(type = "word"))) %>% 
+  ggplot(aes(length, y=..density..)) +
+  geom_histogram(aes(fill = label), alpha = 0.25) +
+  geom_density(aes(color = label)) +
+  scale_x_log10() +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  scale_color_manual(values = c("#8FBC8F", "#E95C4B")) +
+  labs(x='Words')
+```
+
+![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
 
 ## Model creation
 
 ### Data Splitting
 
+``` r
+news_split <- news %>% 
+  select(-author) %>% 
+  initial_split(prop = 0.75, strata = label)
+
+news_train <- training(news_split)
+news_test <- testing(news_split)
+
+news_folds <- vfold_cv(news_train, v = 5, strata = label)
+```
+
 ### Preprocessing the text
+
+``` r
+tfidf_rec <- recipe(label ~ content, data = news_train) %>% 
+  step_tokenize(content) %>% 
+  step_stopwords(content) %>% 
+  step_tokenfilter(content, max_tokens = tune()) %>% 
+  step_tfidf(content)
+```
 
 ### Defining the models

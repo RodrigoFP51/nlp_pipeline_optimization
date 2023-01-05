@@ -4,4 +4,4 @@
 # NLP Pipeline Optmization
 
 This project aims to give an approach on how to optimize a pipeline on
-fake news classification.
+fake news classification dataset.

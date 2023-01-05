@@ -12,5 +12,5 @@ knitr::opts_chunk$set(
 ```
 
 # NLP Pipeline Optmization
-This project aims to give an approach on how to optimize a pipeline on fake news classification.
+This project aims to give an approach on how to optimize a pipeline on fake news classification dataset.
 

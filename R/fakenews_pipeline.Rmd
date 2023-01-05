@@ -6,7 +6,11 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      error = FALSE, 
+                      fig.width = 9)
 ```
 
 ## About the project 
@@ -31,7 +35,7 @@ glimpse(news)
 news <- news %>% 
   mutate(content = paste(title, text, sep = " "),
          label = if_else(label == 1, "true", "fake"),
-         label = factor(label, levels = c("true","fake"))) %>% # Setting 'true' as first factor 
+         label = factor(label, levels = c("true","fake"))) %>% # Setting 'true' as event level
   relocate(label, .before = 1) %>% 
   select(-title,-text) 
 news
@@ -49,28 +53,83 @@ news %>% count(label)
 
 ```{r}
 news %>% 
-  filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
-  count(label, author)
-  # filter(n > 10, label == "fake")
-  # ggplot(aes(author, n, fill = label)) + 
-  # geom_col() +
-  # coord_flip()
+  #filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
+  count(label, author, sort = TRUE, name = "count") %>% 
+  group_by(label) %>% 
+  slice_max(count, n = 10) %>% 
+  mutate(author = fct_reorder(author, count),
+         author = fct_recode(author, "Alexander Light" = "noreply@blogger.com (Alexander Light)")) %>% 
+  filter(author != "nan") %>% 
+  ggplot(aes(author, count, fill = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(label), scales = "free") +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  coord_flip()
 ```
 
 ## Which words are more associated with fake/true news?
 
 ```{r}
 ## Try different approaches: term-frequency, tf-idf, weighted log-odds (tidylo package)
-news %>% 
-  unnest_tokens(text, content)
+news_words <- news %>% 
+  unnest_tokens(text, content) %>% 
+  count(label, text, sort = TRUE)
+
+news_words %>% 
+  anti_join(stop_words, 
+            by = c("text" = "word")) %>%
+  filter(!str_detect(text, "^<U|^http")) %>% # take out other language words and useless information
+  bind_tf_idf(text, label, n) %>% 
+  group_by(label) %>% 
+  slice_max(tf_idf, n = 12) %>% 
+  mutate(text = fct_reorder(text, n)) %>%
+  ungroup() %>% 
+  ggplot(aes(text, tf_idf, fill = label)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(vars(label), scales = "free") +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  coord_flip()
 ```
 
 ## Are fake news lengthy than the true ones?
 
+```{r}
+news %>% 
+  mutate(length = str_count(content, pattern = boundary(type = "word"))) %>% 
+  ggplot(aes(length, y=..density..)) +
+  geom_histogram(aes(fill = label), alpha = 0.25) +
+  geom_density(aes(color = label)) +
+  scale_x_log10() +
+  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
+  scale_color_manual(values = c("#8FBC8F", "#E95C4B")) +
+  labs(x='Words')
+```
+
 ## Model creation
 ### Data Splitting
 
+```{r}
+news_split <- news %>% 
+  select(-author) %>% 
+  initial_split(prop = 0.75, strata = label)
+
+news_train <- training(news_split)
+news_test <- testing(news_split)
+
+news_folds <- vfold_cv(news_train, v = 5, strata = label)
+```
+
 ### Preprocessing the text
+
+```{r}
+tfidf_rec <- recipe(label ~ content, data = news_train) %>% 
+  step_tokenize(content) %>% 
+  step_stopwords(content) %>% 
+  step_tokenfilter(content, max_tokens = tune()) %>% 
+  step_tfidf(content)
+
+
+```
 
 ### Defining the models
 
