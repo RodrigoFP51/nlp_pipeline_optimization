@@ -98,7 +98,7 @@ news_words <- news %>%
 news_words %>% 
   anti_join(stop_words, 
             by = c("text" = "word")) %>%
-  filter(!str_detect(text, "^<U|^http")) %>% # take out other language words and useless information
+  filter(!str_detect(text, "^<U|^http")) %>% # take out foreign languages words and useless information
   tidylo::bind_log_odds(label, text, n) %>% 
   #bind_tf_idf(text, label, n) %>% 
   group_by(label) %>% 

@@ -5,8 +5,8 @@ Fake News Detection with R
     -   [What is NLP](#what-is-nlp)
 -   [Data Loading](#data-loading)
 -   [Distribution fake/true news](#distribution-faketrue-news)
--   [Which autor are more associated with fake/true
-    news?](#which-autor-are-more-associated-with-faketrue-news)
+-   [Text features related to fake
+    news](#text-features-related-to-fake-news)
 -   [Which words are more associated with fake/true
     news?](#which-words-are-more-associated-with-faketrue-news)
 -   [Are fake news lengthy than the true
@@ -29,19 +29,24 @@ Fake News Detection with R
 ``` r
 library(tidymodels)
 library(tidytext)
-library(ranger)
+library(tidyverse)
+library(textcat)
+library(finetune)
+library(textrecipes)
+library(textfeatures)
+library(here)
 library(janitor)
+library(ranger)
 library(bonsai)
 library(discrim)
-library(textrecipes)
-library(here)
-library(tidyverse)
 
 theme_set(
   theme_light() + 
     theme(strip.background = element_rect(fill = "#005b96", linewidth = 1),
           strip.text = element_text(face = "bold", hjust = 0.5, colour = "black"))
 )
+
+label_color <- c("#8FBC8F", "#E95C4B")
 
 news <- read_csv(paste0(here(), "/Data/train.csv")) # https://www.kaggle.com/competitions/fake-news/data
 glimpse(news)
@@ -89,25 +94,41 @@ news %>%
 
 -   Dataset is balanced.
 
-## Which autor are more associated with fake/true news?
+## Text features related to fake news
 
 ``` r
-news %>% 
-  #filter(!str_detect(author, "^\\d|-|[:space:]|[:blank:]")) %>% 
-  count(label, author, sort = TRUE, name = "count") %>% 
-  group_by(label) %>% 
-  slice_max(count, n = 10) %>% 
-  mutate(author = fct_reorder(author, count),
-         author = fct_recode(author, "Alexander Light" = "noreply@blogger.com (Alexander Light)")) %>% 
-  filter(!author %in% c("nan", "admin")) %>% 
-  ggplot(aes(author, count, fill = label)) +
-  geom_col(show.legend = FALSE) +
-  facet_wrap(vars(label), scales = "free") +
-  scale_fill_manual(values = c("#8FBC8F", "#E95C4B")) +
-  coord_flip()
+tictoc::tic()
+news_features <- news$content %>% 
+  textfeatures(sentiment = FALSE, word_dims = FALSE, verbose = TRUE) %>% 
+  bind_cols(label = news$label) %>% 
+  relocate(label, .before = 1)
+```
+
+    ## [32m<U+21AA>[39m [38;5;244mCounting features in text...[39m
+    ## [32m<U+21AA>[39m [38;5;244mParts of speech...[39m
+    ## [32m<U+21AA>[39m [38;5;244mWord dimensions started[39m
+    ## [32m<U+21AA>[39m [38;5;244mNormalizing data[39m
+    ## [32m<U+2714>[39m Job's done!
+
+``` r
+tictoc::toc()
+```
+
+    ## 298.09 sec elapsed
+
+``` r
+news_features %>% 
+  pivot_longer(-label, names_to = "variable", values_to = "value") %>% 
+  ggplot(aes(value, fill = label)) +
+  geom_density(show.legend = FALSE, alpha = 0.75) +
+  facet_wrap(vars(variable), scales = "free") +
+  scale_fill_manual(values = label_color)
 ```
 
 ![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+-   Maybe adding text features could help distinguish between fake and
+    true news
 
 ## Which words are more associated with fake/true news?
 
@@ -122,7 +143,7 @@ news_words <- news %>%
 news_words %>% 
   anti_join(stop_words, 
             by = c("text" = "word")) %>%
-  filter(!str_detect(text, "^<U|^http")) %>% # take out other language words and useless information
+  filter(!str_detect(text, "^<U|^http")) %>% # take out foreign languages words and useless information
   tidylo::bind_log_odds(label, text, n) %>% 
   #bind_tf_idf(text, label, n) %>% 
   group_by(label) %>% 
@@ -172,6 +193,8 @@ news_train <- training(news_split)
 news_test <- testing(news_split)
 
 news_folds <- vfold_cv(news_train, v = 3, strata = label)
+
+news_metrics <- metric_set(accuracy, j_index)
 ```
 
 ### Preprocessing the text
@@ -244,20 +267,24 @@ model_rs <- workflowsets::workflow_set(preproc = list(tfidf = tfidf_rec,
                resamples = news_folds, 
                verbose = TRUE,
                seed = 125,
-               metrics = metric_set(accuracy, j_index), 
+               metrics = news_metrics, 
                control = control_grid(save_pred = TRUE))
 tictoc::toc()
 ```
 
-    ## 1775.36 sec elapsed
+    ## 1683.94 sec elapsed
 
 ``` r
-write_rds(model_rs, file = here("Data/all_models_rs.rds"))
+# write_rds(model_rs, file = here("Data/all_models_rs.rds"))
 
 autoplot(model_rs)
 ```
 
 ![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+``` r
+## Plot ROCAUC of all models
+```
 
 ### Define the preprocessor tunable parameters for LightGBM
 
@@ -279,18 +306,20 @@ lgbm_wf <-
 ``` r
 lgbm_grid <- grid_latin_hypercube(max_tokens(c(100,300)),
                                   num_tokens(c(1,3)),
-                                  size = 10)
+                                  size = 20)
 
 tictoc::tic()
-lgbm_rs <- tune_grid(lgbm_wf,
-                     resamples = news_folds,
-                     grid = lgbm_grid,
-                     metrics = metric_set(accuracy, j_index),
-                     control = control_grid(verbose = TRUE, save_pred = TRUE))
+lgbm_rs <- tune_race_anova(lgbm_wf,
+                           resamples = news_folds,
+                           grid = lgbm_grid,
+                           metrics = news_metrics,
+                           control = control_race(verbose = TRUE, 
+                                                  save_pred = TRUE,
+                                                  burn_in = 2))
 tictoc::toc()
 ```
 
-    ## 1885.31 sec elapsed
+    ## 3552.31 sec elapsed
 
 ``` r
 write_rds(lgbm_rs, file = here("Data/lgbm_rs.rds"))
@@ -299,24 +328,48 @@ autoplot(lgbm_rs)
 ```
 
 ![](fakenews_pipeline_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
-We can see that: \* The more words retained in the training set, the
-better the results  
-\* Setting higher ngrams (2 or 3) doesn’t seem to make a difference
+
+We can see that:  
+- The more words retained in the training set, the better the results  
+- Setting higher ngrams (2 or 3) doesn’t seem to make a difference
 
 ## Choosing the best model
 
 ``` r
-lgbm_fit <- model_rs %>%
-  extract_workflow("text_features_lgbm") %>% 
+lgbm_fit <- lgbm_wf %>%
+  finalize_workflow(parameters = select_best(lgbm_rs, metric = "j_index")) %>% 
   last_fit(news_split,
-           metrics = metric_set(accuracy, j_index))
+           metrics = news_metrics)
 
-lgbm_fit
+lgbm_fit %>% 
+  collect_predictions() %>% 
+  conf_mat(label, .pred_class)
 ```
 
-    ## # Resampling results
-    ## # Manual resampling 
-    ## # A tibble: 1 x 6
-    ##   splits             id               .metrics .notes   .predictions .workflow 
-    ##   <list>             <chr>            <list>   <list>   <list>       <list>    
-    ## 1 <split [2339/781]> train/test split <tibble> <tibble> <tibble>     <workflow>
+    ##           Truth
+    ## Prediction true fake
+    ##       true  383   17
+    ##       fake    6  375
+
+``` r
+predict_save <- function(model, df, file_path){
+  preds <- model %>%
+    extract_workflow() %>% 
+    predict(df)
+  
+  preds %>% 
+    bind_cols(id = df$id) %>% 
+    mutate(.pred_class = if_else(.pred_class == "true", 1, 0)) %>% 
+    select(id, label = .pred_class) %>% 
+    write_csv(file_path)
+}
+```
+
+``` r
+news_validation <- read_csv(here("Data/test.csv")) %>% 
+  mutate(content = paste(title, text, sep = " "))
+
+predict_save(model = lgbm_fit, 
+             df = news_validation, 
+             file_path = here("Data/lgbm_submit.csv"))
+```
